@@ -1,0 +1,88 @@
+version: "3.9"
+
+# ---------------------------------------------------------------------------
+# PDX Hackerspace LLM Orchestrator
+#
+# Copy .env.example to .env and fill in your values before running.
+# Never commit .env — it is gitignored.
+#
+# On each GPU machine:
+#   docker compose up -d orchestrator
+#
+# On the LiteLLM machine (can be the same machine):
+#   docker compose up -d litellm
+#
+# Or bring everything up together on one machine:
+#   docker compose up -d
+# ---------------------------------------------------------------------------
+
+networks:
+  # Shared network for orchestrator <-> vLLM container communication.
+  # The orchestrator creates this at startup if it doesn't exist;
+  # declaring it here ensures Compose knows about it too.
+  llm-net:
+    name: llm-net
+    driver: bridge
+
+services:
+
+  # --------------------------------------------------------------------------
+  # Orchestrator — runs on the GPU machine.
+  # Manages vLLM container lifecycle via the Docker socket and proxies
+  # OpenAI-compatible requests to the appropriate vLLM container.
+  # --------------------------------------------------------------------------
+  orchestrator:
+    build:
+      context: ./orchestrator
+    restart: unless-stopped
+    ports:
+      - "${ORCHESTRATOR_PORT:-8000}:${ORCHESTRATOR_PORT:-8000}"
+    networks:
+      - llm-net
+    env_file:
+      - .env
+    volumes:
+      # Docker socket — required for the orchestrator to manage vLLM containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # HuggingFace model cache — shared with vLLM containers to avoid re-downloading
+      - ${HF_CACHE_DIR:-~/.cache/huggingface}:${HF_CACHE_DIR:-/root/.cache/huggingface}
+    environment:
+      # Pass the resolved cache path into the container so lifecycle.py
+      # uses the same host path when mounting into vLLM containers.
+      HF_CACHE_DIR: "${HF_CACHE_DIR:-/root/.cache/huggingface}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ORCHESTRATOR_PORT:-8000}/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # --------------------------------------------------------------------------
+  # LiteLLM — can run on a separate CPU machine or alongside the orchestrator.
+  # Handles auth, rate limiting, spend tracking, and multi-backend routing.
+  # --------------------------------------------------------------------------
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    restart: unless-stopped
+    ports:
+      - "${LITELLM_PORT:-4000}:4000"
+    networks:
+      - llm-net
+    env_file:
+      - .env
+    environment:
+      ORCHESTRATOR_URL: "${ORCHESTRATOR_URL:-http://orchestrator:8000}"
+      LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY:-}"
+      DATABASE_URL: "${DATABASE_URL:-}"
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      orchestrator:
+        condition: service_healthy

@@ -1,0 +1,45 @@
+# LiteLLM router configuration.
+#
+# This file is safe to commit — no secrets live here.
+# The orchestrator endpoint is injected at runtime via ${ORCHESTRATOR_URL}
+# from your .env file. When both services run in the same Compose stack,
+# the default http://orchestrator:8000 works without any changes.
+#
+# To add a model: add it to MODELS in .env AND add an entry here,
+# then restart both services.
+
+model_list:
+  - model_name: llama-3-8b
+    litellm_params:
+      model: openai/llama-3-8b
+      api_base: "${ORCHESTRATOR_URL}/v1"
+      api_key: "none"
+
+  - model_name: mistral-7b
+    litellm_params:
+      model: openai/mistral-7b
+      api_base: "${ORCHESTRATOR_URL}/v1"
+      api_key: "none"
+
+  - model_name: qwen-14b
+    litellm_params:
+      model: openai/qwen-14b
+      api_base: "${ORCHESTRATOR_URL}/v1"
+      api_key: "none"
+
+router_settings:
+  # Must exceed vLLM cold-start time (container + model load can take 60-180s)
+  timeout: 300
+
+  routing_strategy: least-busy
+
+  # Retry on 503 (model loading) with back-off
+  retry_policy:
+    ServiceUnavailableError: 8
+  allowed_fails: 8
+  cooldown_time: 10
+
+litellm_settings:
+  request_timeout: 300
+  drop_params: true     # ignore unknown OpenAI params vLLM doesn't support
+  set_verbose: false
