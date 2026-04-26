@@ -51,8 +51,8 @@ async def on_startup() -> None:
     )
     for m in cfg.models:
         log.info(
-            "  - %-20s  %-55s  port=%d  vram=%.0fGB",
-            m.name, m.hf_name, m.port, m.vram_gb,
+            "  - %-20s  %-55s  vram=%.0fGB",
+            m.name, m.hf_name, m.vram_gb,
         )
     asyncio.create_task(manager.idle_watcher())
 
