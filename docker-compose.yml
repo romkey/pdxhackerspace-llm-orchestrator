@@ -43,7 +43,7 @@ services:
       # Docker socket — required for the orchestrator to manage vLLM containers
       - /var/run/docker.sock:/var/run/docker.sock
       # HuggingFace model cache — shared with vLLM containers to avoid re-downloading
-      - ${HF_CACHE_DIR:-~/.cache/huggingface}:${HF_CACHE_DIR:-/root/.cache/huggingface}
+      - ${HF_CACHE_DIR:-/root/.cache/huggingface}:${HF_CACHE_DIR:-/root/.cache/huggingface}
     environment:
       # Pass the resolved cache path into the container so lifecycle.py
       # uses the same host path when mounting into vLLM containers.

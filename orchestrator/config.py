@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import shlex
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
@@ -24,6 +25,7 @@ class OrchestratorConfig:
     models: list[ModelConfig]
     hf_token: str | None
     hf_cache_dir: str
+    hf_cache_min_free_gb: float
     idle_timeout: int
     max_concurrent_models: int
     gpu_memory_utilization: float
@@ -32,6 +34,7 @@ class OrchestratorConfig:
     idle_check_interval: int
     log_level: str
     vllm_image: str
+    vllm_extra_args: list[str]
 
     def model_by_name(self, name: str) -> ModelConfig | None:
         return next((m for m in self.models if m.name == name), None)
@@ -71,6 +74,7 @@ def load_config() -> OrchestratorConfig:
         models=models,
         hf_token=os.environ.get("HUGGINGFACE_TOKEN"),
         hf_cache_dir=os.environ.get("HF_CACHE_DIR", os.path.expanduser("~/.cache/huggingface")),
+        hf_cache_min_free_gb=float(os.environ.get("HF_CACHE_MIN_FREE_GB", "10")),
         idle_timeout=int(os.environ.get("IDLE_TIMEOUT_SECONDS", "600")),
         max_concurrent_models=int(os.environ.get("MAX_CONCURRENT_MODELS", "2")),
         gpu_memory_utilization=float(os.environ.get("GPU_MEMORY_UTILIZATION", "0.90")),
@@ -79,4 +83,5 @@ def load_config() -> OrchestratorConfig:
         idle_check_interval=int(os.environ.get("IDLE_CHECK_INTERVAL_SECONDS", "60")),
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
         vllm_image=os.environ.get("VLLM_IMAGE", "vllm/vllm-openai:latest"),
+        vllm_extra_args=shlex.split(os.environ.get("VLLM_EXTRA_ARGS", "")),
     )

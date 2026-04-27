@@ -142,7 +142,9 @@ MODELS='[
 | `GPU_MEMORY_UTILIZATION` | `0.90` | Fraction of GPU VRAM vLLM may use per model |
 | `ORCHESTRATOR_PORT` | `8000` | Port the orchestrator API listens on |
 | `STARTUP_TIMEOUT_SECONDS` | `180` | Max seconds to wait for a vLLM container to become healthy |
+| `HF_CACHE_MIN_FREE_GB` | `10` | Minimum free disk space required in `HF_CACHE_DIR` before starting a model |
 | `VLLM_IMAGE` | `vllm/vllm-openai:latest` | Docker image used for vLLM containers |
+| `VLLM_EXTRA_ARGS` | _(none)_ | Optional extra arguments appended to `vllm serve` |
 | `HF_CACHE_DIR` | _(required)_ | Absolute host path to HuggingFace model cache |
 | `ORCHESTRATOR_URL` | `http://orchestrator:8000` | URL LiteLLM uses to reach the orchestrator |
 | `LITELLM_PORT` | `4000` | External port LiteLLM listens on |
@@ -254,6 +256,13 @@ watch -n2 nvidia-smi
 - Confirm `HUGGINGFACE_TOKEN` is set and has access to the model
 - Increase `STARTUP_TIMEOUT_SECONDS` for large models or slow storage
 - Confirm `HF_CACHE_DIR` is an absolute path (tilde `~` does not expand in Docker mounts)
+- Confirm `HF_CACHE_DIR` has enough free disk space for the model weights and temporary download files
+
+**vLLM exits with CUDA out of memory during startup**
+- Lower `GPU_MEMORY_UTILIZATION`
+- Reduce context length with `VLLM_EXTRA_ARGS="--max-model-len 8192"`
+- Try `VLLM_EXTRA_ARGS="--max-model-len 8192 --enforce-eager"` to avoid CUDA graph capture overhead during testing
+- Use a smaller or quantized model if weights plus KV cache do not fit on the GPU
 
 **"No GPU with N GB free"**
 - Another model container is using the GPU — wait for it to idle out or lower `IDLE_TIMEOUT_SECONDS`

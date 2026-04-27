@@ -6,6 +6,7 @@ The orchestrator manages them via the Docker SDK.
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 
@@ -185,6 +186,27 @@ class ModelManager:
         except docker.errors.DockerException as e:
             raise RuntimeError(f"Failed to pull Docker image {image!r}: {e}") from e
 
+    def _ensure_hf_cache_space(self, model_cfg: ModelConfig) -> None:
+        """Fail early if the host Hugging Face cache path is unavailable or full."""
+        cache_dir = self.cfg.hf_cache_dir
+        if not os.path.isdir(cache_dir):
+            raise RuntimeError(
+                f"HF_CACHE_DIR {cache_dir!r} does not exist or is not a directory. "
+                "Create it on the Docker host and restart the orchestrator."
+            )
+
+        stat = os.statvfs(cache_dir)
+        free_gb = (stat.f_bavail * stat.f_frsize) / (1024 ** 3)
+        required_gb = max(self.cfg.hf_cache_min_free_gb, model_cfg.vram_gb * 2.5)
+
+        if free_gb < required_gb:
+            raise RuntimeError(
+                f"HF_CACHE_DIR {cache_dir!r} has only {free_gb:.1f}GB free; "
+                f"model {model_cfg.name!r} needs at least {required_gb:.1f}GB "
+                "available for model downloads and temporary files. Free space, "
+                "move HF_CACHE_DIR to a larger disk, or lower HF_CACHE_MIN_FREE_GB."
+            )
+
     async def _evict_if_needed(self) -> None:
         """Evict the least-recently-used model if at capacity.
 
@@ -239,9 +261,12 @@ class ModelManager:
         environment = {
             "HF_TOKEN": self.cfg.hf_token or "",
             "HUGGING_FACE_HUB_TOKEN": self.cfg.hf_token or "",
+            "HF_HOME": "/root/.cache/huggingface",
+            "HF_HUB_CACHE": "/root/.cache/huggingface/hub",
         }
 
         loop = asyncio.get_event_loop()
+        self._ensure_hf_cache_space(model_cfg)
         await loop.run_in_executor(None, lambda: self._ensure_image(self.cfg.vllm_image))
 
         log.info(
@@ -259,7 +284,7 @@ class ModelManager:
                         model_cfg.hf_name,
                         "--port", str(VLLM_INTERNAL_PORT),
                         "--gpu-memory-utilization", str(self.cfg.gpu_memory_utilization),
-                    ],
+                    ] + self.cfg.vllm_extra_args,
                     name=container_name,
                     detach=True,
                     network=DOCKER_NETWORK,
