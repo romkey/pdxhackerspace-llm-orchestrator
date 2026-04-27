@@ -47,6 +47,16 @@ All services run in Docker. The orchestrator manages vLLM containers as siblings
 - Docker Engine + Docker Compose v2
 - Network access to the GPU machine on the orchestrator port
 
+### Docker image platforms
+
+The published orchestrator image is built as a multi-platform Linux image for `linux/amd64` and `linux/arm64`. That covers x86_64 Linux hosts, Docker Desktop on Intel and Apple Silicon Macs, and ARM64 NVIDIA systems such as DGX Spark and Jetson Thor.
+
+Macs can run the orchestrator and LiteLLM control-plane containers for development, but GPU-backed vLLM model containers still require a Linux host with NVIDIA Container Toolkit. For DGX Spark and Jetson Thor, keep `VLLM_IMAGE` configurable and choose a vLLM image tag that publishes `linux/arm64` support for the target hardware. You can verify an upstream image manifest with:
+
+```bash
+docker buildx imagetools inspect vllm/vllm-openai:latest
+```
+
 ---
 
 ## Quick Start

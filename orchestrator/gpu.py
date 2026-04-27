@@ -14,6 +14,21 @@ log = logging.getLogger(__name__)
 _NVIDIA_SMI_IMAGE = "nvidia/cuda:12.3.1-base-ubuntu22.04"
 
 
+def _parse_free_memory_gb(free_mb_raw: str) -> float | None:
+    """Convert nvidia-smi memory.free (MiB) to GiB, or None if not available."""
+    s = free_mb_raw.strip()
+    if not s:
+        return None
+    upper = s.upper()
+    if upper in ("N/A", "[N/A]", "NA") or upper.startswith("[N/A"):
+        return None
+    try:
+        return float(s) / 1024.0
+    except ValueError:
+        log.warning("Skipping GPU line: could not parse memory.free %r", free_mb_raw)
+        return None
+
+
 def _docker_client() -> docker.DockerClient:
     return docker.from_env()
 
@@ -42,8 +57,21 @@ def get_free_gpu_memory() -> dict[int, float]:
             parts = [p.strip() for p in line.split(",")]
             if len(parts) != 2:
                 continue
-            idx, free_mb = parts
-            gpus[int(idx)] = float(free_mb) / 1024.0
+            idx_s, free_mb = parts
+            try:
+                idx = int(idx_s)
+            except ValueError:
+                log.warning("Skipping GPU line: bad index %r", idx_s)
+                continue
+            free_gb = _parse_free_memory_gb(free_mb)
+            if free_gb is None:
+                log.warning(
+                    "GPU %s reports no usable free memory from nvidia-smi (%r) — skipping",
+                    idx_s,
+                    free_mb,
+                )
+                continue
+            gpus[idx] = free_gb
         return gpus
 
     except docker.errors.DockerException as e:

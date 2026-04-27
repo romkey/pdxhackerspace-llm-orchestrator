@@ -1,7 +1,7 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.11-slim
 
-# Install Docker CLI so we can also shell out if needed,
-# and curl for the healthcheck.
+# Install curl for the healthcheck.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
  && rm -rf /var/lib/apt/lists/*
@@ -9,7 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 
 COPY . .
 
