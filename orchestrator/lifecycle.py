@@ -166,6 +166,25 @@ class ModelManager:
         safe = model_name.replace("/", "-").replace(":", "-").replace("_", "-")
         return f"{CONTAINER_PREFIX}{safe}"
 
+    def _ensure_image(self, image: str) -> None:
+        """Pull the vLLM image if it is not already present locally."""
+        try:
+            self._docker.images.get(image)
+            return
+        except docker.errors.ImageNotFound:
+            log.info("Docker image %r not found locally; pulling it now", image)
+
+        try:
+            self._docker.images.pull(image)
+            log.info("Pulled Docker image %r", image)
+        except docker.errors.APIError as e:
+            explanation = e.explanation or str(e)
+            raise RuntimeError(
+                f"Failed to pull Docker image {image!r}: {explanation}"
+            ) from e
+        except docker.errors.DockerException as e:
+            raise RuntimeError(f"Failed to pull Docker image {image!r}: {e}") from e
+
     async def _evict_if_needed(self) -> None:
         """Evict the least-recently-used model if at capacity.
 
@@ -222,42 +241,59 @@ class ModelManager:
             "HUGGING_FACE_HUB_TOKEN": self.cfg.hf_token or "",
         }
 
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: self._ensure_image(self.cfg.vllm_image))
+
         log.info(
             "Starting vLLM container %r (image=%s) for model %r on GPU %d",
             container_name, self.cfg.vllm_image, model_cfg.name, gpu,
         )
 
         # Run in a thread — docker SDK is synchronous
-        loop = asyncio.get_event_loop()
-        container = await loop.run_in_executor(
-            None,
-            lambda: self._docker.containers.run(
-                self.cfg.vllm_image,
-                command=[
-                    "--model", model_cfg.hf_name,
-                    "--port", str(VLLM_INTERNAL_PORT),
-                    "--gpu-memory-utilization", str(self.cfg.gpu_memory_utilization),
-                ],
-                name=container_name,
-                detach=True,
-                network=DOCKER_NETWORK,
-                environment=environment,
-                device_requests=[
-                    docker.types.DeviceRequest(
-                        device_ids=[str(gpu)],
-                        capabilities=[["gpu"]],
-                    )
-                ],
-                volumes={
-                    self.cfg.hf_cache_dir: {
-                        "bind": "/root/.cache/huggingface",
-                        "mode": "rw",
-                    }
-                },
-                shm_size="2g",          # vLLM needs shared memory
-                restart_policy={"Name": "no"},
-            ),
-        )
+        try:
+            container = await loop.run_in_executor(
+                None,
+                lambda: self._docker.containers.run(
+                    self.cfg.vllm_image,
+                    command=[
+                        model_cfg.hf_name,
+                        "--port", str(VLLM_INTERNAL_PORT),
+                        "--gpu-memory-utilization", str(self.cfg.gpu_memory_utilization),
+                    ],
+                    name=container_name,
+                    detach=True,
+                    network=DOCKER_NETWORK,
+                    environment=environment,
+                    device_requests=[
+                        docker.types.DeviceRequest(
+                            device_ids=[str(gpu)],
+                            capabilities=[["gpu"]],
+                        )
+                    ],
+                    volumes={
+                        self.cfg.hf_cache_dir: {
+                            "bind": "/root/.cache/huggingface",
+                            "mode": "rw",
+                        }
+                    },
+                    shm_size="2g",          # vLLM needs shared memory
+                    restart_policy={"Name": "no"},
+                ),
+            )
+        except docker.errors.ImageNotFound as e:
+            raise RuntimeError(
+                f"vLLM image {self.cfg.vllm_image!r} is not available to Docker. "
+                "Pull it on the host or set VLLM_IMAGE to an available image."
+            ) from e
+        except docker.errors.APIError as e:
+            explanation = e.explanation or str(e)
+            raise RuntimeError(
+                f"Failed to create vLLM container {container_name!r}: {explanation}"
+            ) from e
+        except docker.errors.DockerException as e:
+            raise RuntimeError(
+                f"Failed to start vLLM container {container_name!r}: {e}"
+            ) from e
 
         log.info("Container %r started (id=%s)", container_name, container.short_id)
 

@@ -9,21 +9,21 @@
 # then restart both services.
 
 model_list:
-  - model_name: llama-3-8b
+  - model_name: qwen3.6-27b
     litellm_params:
-      model: openai/llama-3-8b
+      model: openai/qwen3.6-27b
       api_base: "${ORCHESTRATOR_URL}/v1"
       api_key: "none"
 
-  - model_name: mistral-7b
+  - model_name: gemma4-e4b
     litellm_params:
-      model: openai/mistral-7b
+      model: openai/gemma4-e4b
       api_base: "${ORCHESTRATOR_URL}/v1"
       api_key: "none"
 
-  - model_name: qwen-14b
+  - model_name: qwen3.5-9b
     litellm_params:
-      model: openai/qwen-14b
+      model: openai/qwen3.5-9b
       api_base: "${ORCHESTRATOR_URL}/v1"
       api_key: "none"
 
